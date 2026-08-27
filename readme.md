@@ -2,7 +2,7 @@
 
 Idag bygger vi **semantiska funktioner** ovanpå er egen data med **embeddings** + **Supabase (pgvector)**.
 
-Utgå från projektet från repot på lektionen igår där vi redan
+Utgå från [projektet från repot](https://github.com/joeljohansen-chasacademy/ai-llms-ai-apier-rag) på lektionen i måndags där vi redan
 
 1. genererar embeddings,
 2. laddar upp dem till Supabase, och
