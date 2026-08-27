@@ -112,7 +112,7 @@ För att till exempel söka i artiklar/anteckningar (.md/.txt) – kursantecknin
 
 **Use case:** “Användare tittade på det här – visa liknande”.
 
-**Data:** En liten produkt-, film- eller boklista med **beskrivningar** (titel, synopsis/description, ev. genre, årtal). Ta ex. MongoDBs exempeldatabas.
+**Data:** En liten produkt-, film- eller boklista med **beskrivningar** (titel, synopsis/description, ev. genre, årtal). Ta ex. [denna exempeldatabas](https://www.kaggle.com/datasets/rounakbanik/the-movies-dataset?select=movies_metadata.csv).
 
 **Steg:**
 
