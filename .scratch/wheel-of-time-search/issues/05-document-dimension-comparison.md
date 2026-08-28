@@ -6,6 +6,6 @@
 
 **Status:** ready-for-agent
 
-- [ ] Using the working search UI's 768/3072 toggle, find 5 queries where the top results genuinely differ between the two dimensions
-- [ ] For each of the 5 queries, record: the query text, the differing results (or ranking) at 768 vs 3072, and a brief explanation of why the results likely diverge
-- [ ] The write-up is committed to the repo (e.g. alongside the spec) so it's part of the workshop deliverable, not just a chat transcript
+- [x] Using the working search UI's 768/3072 toggle, find 5 queries where the top results genuinely differ between the two dimensions
+- [x] For each of the 5 queries, record: the query text, the differing results (or ranking) at 768 vs 3072, and a brief explanation of why the results likely diverge
+- [x] The write-up is committed to the repo (e.g. alongside the spec) so it's part of the workshop deliverable, not just a chat transcript — see [dimension-comparison.md](../dimension-comparison.md)

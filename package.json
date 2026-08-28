@@ -8,6 +8,7 @@
     "corpus": "tsx src/corpus/main.ts",
     "kb": "tsx --env-file=.env src/kb/main.ts",
     "search": "tsx --env-file=.env src/search/main.ts",
+    "compare": "tsx --env-file=.env src/search/compare-main.ts",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },
