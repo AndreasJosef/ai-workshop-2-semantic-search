@@ -18,6 +18,15 @@ function main(): void {
     search: (query, dimensions) => searchDocuments(query, dimensions, { embed, db }),
   });
 
+  server.on("error", (error: NodeJS.ErrnoException) => {
+    if (error.code === "EADDRINUSE") {
+      console.error(`Port ${port} is already in use. Stop whatever is using it, or set PORT to a different value.`);
+    } else {
+      console.error(`Failed to start server: ${error.message}`);
+    }
+    process.exit(1);
+  });
+
   server.listen(port, () => {
     console.log(`Wheel of Time semantic search listening on http://localhost:${port}`);
   });
