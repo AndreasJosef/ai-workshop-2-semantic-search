@@ -1,129 +1,90 @@
-# Embeddings Playground – Workshop
+# Wheel of Time Semantic Search
 
-Idag bygger vi **semantiska funktioner** ovanpå er egen data med **embeddings** + **Supabase (pgvector)**.
+Semantic search over a knowledge base built from [The Wheel of Time Fandom wiki](https://wot.fandom.com) (CC BY-SA): a curated set of pages is chunked, embedded, and stored in Supabase/pgvector, so a free-text query returns the most relevant chunks — with a toggle to compare 768- vs 3072-dimension embeddings side by side.
 
-Utgå från [projektet från repot](https://github.com/joeljohansen-chasacademy/ai-llms-ai-apier-rag) på lektionen i måndags där vi redan
+This started as the "Alternative A" brief from a one-day embeddings workshop (originally a Swedish assignment doc pointing at a Cosmere/Coppermind dataset) and was rebuilt from scratch on The Wheel of Time wiki instead, since Coppermind's license explicitly opts out of AI/derivative use — see [ADR-0002](./docs/adr/0002-wheel-of-time-over-coppermind.md).
 
-1. genererar embeddings,
-2. laddar upp dem till Supabase, och
-3. anropar en färdig **RPC** för att jämföra embeddings,
+## What it does
 
-Detta kan vi bygga på för att lösa någon av uppgifterna längre ner.
+1. **Corpus** — fetches a curated list of wiki pages, strips wikitext down to prose, and chunks each article along its own section headers (falling back to fixed-size splitting for long sections).
+2. **Knowledge base** — embeds every chunk with `gemini-embedding-001` (via OpenRouter) at both 768 and 3072 dimensions, and upserts it into a single Supabase `documents` table.
+3. **Search** — a small web UI: type a query, get the top 5 matches (snippet, similarity score, source-article link for attribution), and flip a 768/3072 toggle to see how the ranking changes.
+4. **Compare** — a CLI that runs the same query at both dimensions side by side, used to produce the [written comparison](./.scratch/wheel-of-time-search/dimension-comparison.md) of five queries where the two dimensions genuinely disagree.
 
----
+## Architecture
 
-## Kom igång
-
-### 1) Miljö
-
-* Supabase-projekt (pgvector aktiverat)
-* `.env` i rot med:
-
-  ```
-  SUPABASE_URL=...
-  SUPABASE_SERVICE_ROLE=...
-  GEMINI_API_KEY...
-  ```
-
-### 2) Databas (om ni behöver återskapa)
-
-Tabell + RPC
-
-```sql
--- Om ni inte lagt till pgvector i gränssnittet, så kan ni också göra detta i editorn i Supabase.
-create extension if not exists vector;
-
--- Lägg märke till att vår embedding har 768 dimensioner. Om vi ändrar i koden, behöver vi också ändra här.
-create table if not exists documents (
-id bigserial primary key,
-content text not null,
-embedding vector(768) not null
-);
-
--- Valfritt men rekommenderat. Grundläggande säkerhet för att ingen ska kunna skriva till tabellen. Men alla med anon_key kan läsa.
-alter table documents enable row level security;
-create policy "public read" on documents for select using (true);
-
--- Den här funktionen är den som gör våran similarity search möjlig. Ni behöver inte förstå den
--- Det den gör är att den tar emot vår sökvector och sen gör en cosine similarity search på våra embeddings i tabellen documents.
-create or replace function match_documents(
-query_embedding vector(768),
-match_count int default 5
-) returns table (
-id bigint,
-content text,
-similarity float
-) language sql stable as $$
-select d.id,
-d.content,
-1 - (d.embedding <=> query_embedding) as similarity
-from documents d
-order by d.embedding <=> query_embedding
-limit match_count;
-$$;
+```
+src/corpus/   fetch → clean → chunk (no Supabase dependency, verifiable standalone)
+src/kb/       embed chunks (768 + 3072) and store them in Supabase
+src/search/   search backend + web UI, and the compare CLI
 ```
 
-> **Tips:** Om ni vill växla mellan 768 och 3072 dimensioner under dagen, skapa **två tabeller** (t.ex. `documents_768` och `documents_3072`) och **två RPC** med rätt `vector(n)` så ni slipper migrera fram och tillbaka.
+Schema: one `documents` table, one row per chunk, with `embedding_768 vector(768)` and `embedding_3072 vector(3072)` columns and two matching RPCs (`match_documents_768`, `match_documents_3072`) — see [ADR-0001](./docs/adr/0001-single-table-dual-embedding-columns.md) for why it's one table rather than two.
 
----
+## Getting started
 
-## Chunking – hur mycket text per embedding?
+### Prerequisites
 
-När vi skapar embeddings utifrån text behöver vi se till att vi inte skickar in för mycket (eller för lite) text. Detta är särskilt viktigt när vi jobbar med större dokument där all text inte får plats. Då brukar man göra något som kallas för "chunking"
+- Node.js + [pnpm](https://pnpm.io) (`pnpm@10.34.1`, see `packageManager` in `package.json`)
+- A Supabase project with the `vector` extension enabled
+- An [OpenRouter](https://openrouter.ai) API key (used to call Gemini's embeddings endpoint — see [ADR-0003](./docs/adr/0003-openrouter-proxy-for-gemini-embeddings.md))
 
-Det enklaste är att helt manuellt se till att dela upp sin data men vid större dataset blir en automatisk chunking nödvändig. Det finns verktyg för detta (och vi kan ju skriva vår egen textuppdelar-algoritm).
+### 1) Install dependencies
 
-ALTERNATIVT: Använd AI för att dela upp era texter :)
+```sh
+pnpm install
+```
 
-**Riktlinjer (börja här, iterera sedan):**
+### 2) Provision Supabase
 
-* **Chunk size:** 200–400 tokens per chunk.
-* **Overlap:** 50–100 tokens.
-* **Granularitet:** Bra tumregel är “en semantisk tanke per chunk”. För långa chunks urvattnar signalen; för korta tappar kontext.
+Run the setup wizard, which walks you through creating the project, enabling `pgvector`, running the schema migration ([`schema.sql`](./.scratch/wheel-of-time-search/schema.sql)), and populating `.env`:
 
-Om ni vill läsa mer om chunking strategier finns detta [här](https://www.pinecone.io/learn/chunking-strategies/)
+```sh
+./scripts/setup-supabase.sh
+```
 
----
+`.env` needs:
 
-## Uppgifter
+```
+SUPABASE_URL=...
+SUPABASE_SERVICE_ROLE=...
+OPENROUTER_API_KEY=...
+```
 
-### Alternativ A) **Semantisk sökning i “kunskapsbas”**
+### 3) Build the knowledge base
 
-För att till exempel söka i artiklar/anteckningar (.md/.txt) – kursanteckningar, bloggar, dagboksantexkningar, recept.
+```sh
+pnpm corpus   # fetch + clean + chunk the curated wiki pages → data/chunks.jsonl
+pnpm kb       # embed each chunk (768 + 3072) and store it in Supabase
+```
 
-**Steg:**
+### 4) Search
 
-1. Välj datakälla: använd antingen AI för att generera ett dataset eller använd material ni redan har.
-2. Använd koden från igår för att ladda upp data i Supabase
-3. Bygg **en enkel sök-UI** (web eller node.js):
-   * input: query-sträng
-   * output: 5 träffar (content-snippet, similarity)
-4. Testa **768 vs 3072** och se om det blir någon skillnad i resultat.
-5. Dokumentera 5 queries där resultaten **skiljer sig** och förklara varför ni tror det blir så.
+```sh
+pnpm search   # starts the web UI at http://localhost:3000 (set PORT to override)
+```
 
-**Extra (om ni blir klara):**
+Or compare both dimensions for one or more queries from the CLI:
 
-* Lägg till möjligheten att skicka in ny text i databasen alltså: text -> embeddings -> DB.
-* Se om ni kan få in ett anrop till en LLM och därmed kunna få en chat-liknande upplevelse.
+```sh
+pnpm compare -- "Who is Nynaeve?" "What happened at Tarmon Gai'don?"
+```
 
----
+### Tests & typecheck
 
-### Alternativ B) **Rekommendationssystem (liknande objekt)**
+```sh
+pnpm test
+pnpm typecheck
+```
 
-**Use case:** “Användare tittade på det här – visa liknande”.
+## Docs
 
-**Data:** En liten produkt-, film- eller boklista med **beskrivningar** (titel, synopsis/description, ev. genre, årtal). Ta ex. [denna exempeldatabas](https://www.kaggle.com/datasets/rounakbanik/the-movies-dataset?select=movies_metadata.csv).
+- [`CONTEXT.md`](./CONTEXT.md) — domain glossary (Document, Knowledge Base)
+- [`docs/adr/`](./docs/adr/) — architecture decisions (schema shape, content-source choice, embedding provider)
+- [`.scratch/wheel-of-time-search/spec.md`](./.scratch/wheel-of-time-search/spec.md) — the build spec
+- [`.scratch/wheel-of-time-search/dimension-comparison.md`](./.scratch/wheel-of-time-search/dimension-comparison.md) — the 768 vs 3072 write-up
+- Implementation history: [GitHub Issues](https://github.com/AndreasJosef/ai-workshop-2-semantic-search/issues?q=is%3Aissue+is%3Aclosed) (issues #1–#5, all closed — see `docs/agents/issue-tracker.md` for the tracker conventions)
 
-**Steg:**
+## Attribution
 
-1. Sätt ihop relevant data till **en textsträng per objekt** (t.ex. `title + " — " + description` actors etc.).
-2. Embedda *hela objektet* (ofta **1 vektor/objekt**)
-3. UI/CLI: välj ett objekt A → hämta **topp-N liknande** via RPC med A:s embedding som query.
-4. Variera:
-   * **768 vs 3072**,
-   * Ta bort data ur objektet (alltså testa med bara "description", får ni andra resultat då?)
-
-**Extra (om ni blir klara):**
-
-* Lägg till semantisk sökning OCKSÅ så att användaren kan be om vilken typ av film ex. som den vill se.
-
+Source content is from [The Wheel of Time Fandom wiki](https://wot.fandom.com), licensed CC BY-SA; every search result links back to its source article.
