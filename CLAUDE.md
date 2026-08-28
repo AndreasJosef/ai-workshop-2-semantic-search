@@ -2,7 +2,7 @@
 
 ### Issue tracker
 
-Issues and specs live as markdown files under `.scratch/<feature-slug>/`. See `docs/agents/issue-tracker.md`.
+Issues live as GitHub issues on `AndreasJosef/ai-workshop-2-semantic-search`. See `docs/agents/issue-tracker.md`.
 
 ### Triage labels
 
