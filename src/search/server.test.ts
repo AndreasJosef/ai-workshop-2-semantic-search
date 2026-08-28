@@ -34,6 +34,7 @@ describe("createSearchServer", () => {
 
     expect(response.status).toBe(200);
     expect(response.headers.get("content-type")).toContain("application/json");
+    expect(response.headers.get("cache-control")).toBe("no-store");
     const body = (await response.json()) as { results: SearchMatch[] };
     expect(body.results).toEqual([RESULT]);
     expect(search).toHaveBeenCalledWith("one power", 768);
@@ -90,6 +91,7 @@ describe("createSearchServer", () => {
 
     expect(response.status).toBe(200);
     expect(response.headers.get("content-type")).toContain("text/html");
+    expect(response.headers.get("cache-control")).toBe("no-store");
     const html = await response.text();
     expect(html).toContain("search");
   });

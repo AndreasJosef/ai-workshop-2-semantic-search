@@ -23,7 +23,10 @@ function errorMessage(error: unknown): string {
 }
 
 function sendJson(res: ServerResponse, status: number, body: unknown): void {
-  res.writeHead(status, { "content-type": "application/json; charset=utf-8" });
+  res.writeHead(status, {
+    "content-type": "application/json; charset=utf-8",
+    "cache-control": "no-store",
+  });
   res.end(JSON.stringify(body));
 }
 
@@ -66,7 +69,12 @@ export function createSearchServer(deps: SearchServerDeps): Server {
 
       if (path === "/" || path === "/index.html") {
         const html = await readFile(INDEX_HTML_PATH, "utf8");
-        res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+        // The UI is edited between server restarts (and was edited after this
+        // server shipped once already); never let the browser keep a stale copy.
+        res.writeHead(200, {
+          "content-type": "text/html; charset=utf-8",
+          "cache-control": "no-store",
+        });
         res.end(html);
         return;
       }
