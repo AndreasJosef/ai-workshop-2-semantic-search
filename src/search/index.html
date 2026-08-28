@@ -112,13 +112,14 @@
   <body>
     <h1>Wheel of Time — Semantic Search</h1>
     <p class="subtitle">
-      Semantic search over the Wheel of Time Fandom wiki (CC BY-SA), embedded at two dimensions.
+      Search over the Wheel of Time Fandom wiki (CC BY-SA): embeddings at two dimensions, or Postgres full-text keyword matching.
     </p>
 
     <form id="search-form">
-      <div class="dim-toggle" role="radiogroup" aria-label="Embedding dimensions">
+      <div class="dim-toggle" role="radiogroup" aria-label="Search mode">
         <label><input type="radio" name="dim" value="768" checked />768-dim</label>
         <label><input type="radio" name="dim" value="3072" />3072-dim</label>
+        <label><input type="radio" name="dim" value="keyword" />Keyword</label>
       </div>
       <input
         type="search"
@@ -145,36 +146,40 @@
         return text.length > SNIPPET_LENGTH ? text.slice(0, SNIPPET_LENGTH).trimEnd() + "…" : text;
       }
 
-      function currentDimensions() {
+      function currentMode() {
         return form.elements.dim.value;
       }
 
-      async function runSearch(query, dimensions) {
+      function modeLabel(mode) {
+        return mode === "keyword" ? "keyword mode" : `${mode} dimensions`;
+      }
+
+      async function runSearch(query, mode) {
         lastQuery = query;
         statusEl.className = "";
-        statusEl.textContent = `Searching at ${dimensions} dimensions…`;
+        statusEl.textContent = `Searching in ${modeLabel(mode)}…`;
         resultsEl.replaceChildren();
         try {
-          const response = await fetch(`/api/search?q=${encodeURIComponent(query)}&dim=${dimensions}`);
+          const response = await fetch(`/api/search?q=${encodeURIComponent(query)}&dim=${mode}`);
           const body = await response.json();
           if (!response.ok) {
             throw new Error(body.error ?? `Search failed (HTTP ${response.status})`);
           }
-          renderResults(body.results, dimensions);
+          renderResults(body.results, mode);
         } catch (error) {
           statusEl.className = "error";
           statusEl.textContent = error.message;
         }
       }
 
-      function renderResults(results, dimensions) {
+      function renderResults(results, mode) {
         statusEl.className = "";
-        statusEl.textContent = `${results.length} matches at ${dimensions} dimensions for “${lastQuery}”`;
-        for (const { content, similarity, sourceUrl } of results) {
+        statusEl.textContent = `${results.length} matches in ${modeLabel(mode)} for “${lastQuery}”`;
+        for (const { content, score, sourceUrl } of results) {
           const article = document.createElement("article");
-          const score = document.createElement("span");
-          score.className = "similarity";
-          score.textContent = `similarity ${similarity.toFixed(4)}`;
+          const scoreEl = document.createElement("span");
+          scoreEl.className = "similarity";
+          scoreEl.textContent = `score ${score.toFixed(4)}`;
           const text = document.createElement("p");
           text.className = "snippet";
           text.textContent = snippet(content);
@@ -189,7 +194,7 @@
           attribution.append("Text from the Wheel of Time Fandom wiki, licensed under ");
           attribution.append(license);
           attribution.append(".");
-          article.append(score, text, link, attribution);
+          article.append(scoreEl, text, link, attribution);
           resultsEl.append(article);
         }
       }
@@ -198,14 +203,14 @@
         event.preventDefault();
         const query = form.elements.q.value.trim();
         if (!query) return;
-        history.replaceState(null, "", `?q=${encodeURIComponent(query)}&dim=${currentDimensions()}`);
-        runSearch(query, currentDimensions());
+        history.replaceState(null, "", `?q=${encodeURIComponent(query)}&dim=${currentMode()}`);
+        runSearch(query, currentMode());
       });
 
       form.elements.dim.forEach((radio) => {
         radio.addEventListener("change", () => {
           if (radio.checked && lastQuery) {
-            runSearch(lastQuery, currentDimensions());
+            runSearch(lastQuery, currentMode());
           }
         });
       });
@@ -213,7 +218,8 @@
       const params = new URLSearchParams(location.search);
       if (params.get("q")) {
         const query = params.get("q");
-        const dim = params.get("dim") === "3072" ? "3072" : "768";
+        const rawDim = params.get("dim");
+        const dim = rawDim === "3072" || rawDim === "keyword" ? rawDim : "768";
         form.elements.q.value = query;
         form.elements.dim.value = dim;
         runSearch(query, dim);

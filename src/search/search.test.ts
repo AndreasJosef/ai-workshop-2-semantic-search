@@ -8,7 +8,7 @@ const RPC_ROW: SearchMatch = {
   id: 1,
   content: "The One Power is the force that drives the Wheel of Time.",
   sourceUrl: "https://wot.fandom.com/wiki/One_Power",
-  similarity: 0.91,
+  score: 0.91,
 };
 
 function fakeEmbed(): Embed {
@@ -29,7 +29,7 @@ describe("searchDocuments", () => {
     const results = await searchDocuments("the one power", 768, { embed, db });
 
     expect(embed).toHaveBeenCalledWith(["the one power"], 768);
-    expect(db.matchDocuments).toHaveBeenCalledWith("match_documents_768", [0.1, 0.2], 5);
+    expect(db.matchDocuments).toHaveBeenCalledWith({ rpc: "match_documents_768", queryEmbedding: [0.1, 0.2] }, 5);
     expect(results).toEqual([RPC_ROW]);
   });
 
@@ -40,7 +40,18 @@ describe("searchDocuments", () => {
     await searchDocuments("tel'aran'rhiod", 3072, { embed, db });
 
     expect(embed).toHaveBeenCalledWith(["tel'aran'rhiod"], 3072);
-    expect(db.matchDocuments).toHaveBeenCalledWith("match_documents_3072", [0.1, 0.2], 5);
+    expect(db.matchDocuments).toHaveBeenCalledWith({ rpc: "match_documents_3072", queryEmbedding: [0.1, 0.2] }, 5);
+  });
+
+  it("does not embed and passes the raw query text when searching in keyword mode", async () => {
+    const embed = fakeEmbed();
+    const db = fakeDb();
+
+    const results = await searchDocuments("the one power", "keyword", { embed, db });
+
+    expect(embed).not.toHaveBeenCalled();
+    expect(db.matchDocuments).toHaveBeenCalledWith({ rpc: "match_documents_keyword", queryText: "the one power" }, 5);
+    expect(results).toEqual([RPC_ROW]);
   });
 
   it("returns the configured number of matches", async () => {
@@ -49,7 +60,7 @@ describe("searchDocuments", () => {
 
     await searchDocuments("the one power", 768, { embed, db }, { matchCount: 3 });
 
-    expect(db.matchDocuments).toHaveBeenCalledWith("match_documents_768", [0.1, 0.2], 3);
+    expect(db.matchDocuments).toHaveBeenCalledWith({ rpc: "match_documents_768", queryEmbedding: [0.1, 0.2] }, 3);
   });
 
   it("throws when the embedder returns no vector for the query", async () => {

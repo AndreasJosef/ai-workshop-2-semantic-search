@@ -5,7 +5,7 @@ Semantic search over a knowledge base built from The Wheel of Time Fandom wiki (
 ## Language
 
 **Document**:
-One retrievable chunk of Wheel of Time wiki text, stored with two embedding representations (768-dim and 3072-dim) of the same content, so retrieval quality can be compared side by side (see [ADR-0001](./docs/adr/0001-single-table-dual-embedding-columns.md)).
+One retrievable chunk of Wheel of Time wiki text, stored with three representations of the same content: two embeddings (768-dim and 3072-dim) and one lexical form (a `tsvector` generated from the text, matched with Postgres full-text search), so retrieval quality can be compared side by side across both axes (see [ADR-0001](./docs/adr/0001-single-table-dual-embedding-columns.md) and [ADR-0004](./docs/adr/0004-postgres-full-text-keyword-search.md)).
 _Avoid_: Item, Object — those describe whole-entity embeddings, as used in the workshop's recommendation-system alternative, which this project isn't building.
 
 **Knowledge Base**:

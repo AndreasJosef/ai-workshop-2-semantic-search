@@ -234,7 +234,9 @@ write_env OPENROUTER_API_KEY "$OPENROUTER_API_KEY"
 stage "Run the schema migration"
 say "This creates the vector extension, the documents table (content +"
 say "both embedding columns + source_url per ADR-0001/ADR-0002), a"
-say "public-read RLS policy, and the two match_documents_* RPCs."
+say "public-read RLS policy, both embedding match_documents_* RPCs, and"
+say "the keyword search path (generated content_tsv tsvector column, GIN"
+say "index, match_documents_keyword RPC per ADR-0004)."
 say "The SQL lives at: $SCHEMA_FILE"
 step "In the project dashboard, click the SQL Editor icon in the left"
 step "sidebar → New query."
@@ -245,7 +247,7 @@ step "idempotent, so re-running it later is safe)."
 confirm "Did the migration run without errors?" || warn "Fix the error in the SQL editor before continuing, then re-run this script."
 
 # ── Stage 5: manual smoke test ─────────────────────────────────────────────
-stage "Smoke test: confirm both RPCs return results"
+stage "Smoke test: confirm all three RPCs return results"
 say "Run these as two SEPARATE statements in the SQL editor (not combined"
 say "into one WITH query — a data-modifying CTE and the rest of its own"
 say "statement share one snapshot, so a fresh 'select from documents' done"
@@ -264,8 +266,8 @@ cat <<'SQL'
   );
 SQL
 note ""
-step "2. Then, as a separate Run, call both RPCs against that row's own"
-step "   embedding — each should return it first with similarity ~1:"
+step "2. Then, as a separate Run, call the RPCs against that row's own"
+step "   embedding / content — each should return it:"
 cat <<'SQL'
   select 'match_documents_768' as rpc, * from match_documents_768(
     (select embedding_768 from documents where content = 'smoke test row' limit 1), 5
@@ -276,12 +278,17 @@ cat <<'SQL'
   );
 SQL
 note ""
-step "Confirm you see one row back from each RPC with similarity ~1."
+cat <<'SQL'
+  select 'match_documents_keyword' as rpc, * from match_documents_keyword('smoke test row', 5);
+SQL
+note ""
+step "Confirm you see one row back from each RPC (similarity ~1 for the"
+step "embedding RPCs, a nonzero score for the keyword RPC)."
 step "Then clean up the dummy row:"
 cat <<'SQL'
   delete from documents where content = 'smoke test row';
 SQL
-confirm "Did both RPCs return a row, and did you delete the dummy row?" || warn "Re-check the RPCs before marking this ticket done."
+confirm "Did all three RPCs return a row, and did you delete the dummy row?" || warn "Re-check the RPCs before marking this ticket done."
 # ──────────────────────────────────────────────────────────────────────────
 
 finish

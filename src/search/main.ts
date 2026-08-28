@@ -15,7 +15,7 @@ function main(): void {
   const embed = createOpenRouterEmbedder(openRouterApiKey);
   const db = createSupabaseClient(supabaseUrl, supabaseServiceRole);
   const server = createSearchServer({
-    search: (query, dimensions) => searchDocuments(query, dimensions, { embed, db }),
+    search: (query, mode) => searchDocuments(query, mode, { embed, db }),
   });
 
   server.on("error", (error: NodeJS.ErrnoException) => {

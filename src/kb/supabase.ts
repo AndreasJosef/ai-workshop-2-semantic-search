@@ -7,13 +7,17 @@ export interface DocumentRow {
   embedding_3072: string;
 }
 
-export type MatchDocumentsRpc = "match_documents_768" | "match_documents_3072";
+export type MatchDocumentsRpc = "match_documents_768" | "match_documents_3072" | "match_documents_keyword";
+
+export type MatchDocumentsQuery =
+  | { rpc: Exclude<MatchDocumentsRpc, "match_documents_keyword">; queryEmbedding: readonly number[] }
+  | { rpc: "match_documents_keyword"; queryText: string };
 
 export interface SearchMatch {
   id: number;
   content: string;
   sourceUrl: string;
-  similarity: number;
+  score: number;
 }
 
 export interface SupabaseClient {
@@ -21,7 +25,7 @@ export interface SupabaseClient {
   deleteDocumentsForSourceUrls(urls: readonly string[]): Promise<void>;
   countDocuments(): Promise<number>;
   countDocumentsWithMissingEmbeddings(): Promise<number>;
-  matchDocuments(rpc: MatchDocumentsRpc, queryEmbedding: readonly number[], matchCount: number): Promise<SearchMatch[]>;
+  matchDocuments(query: MatchDocumentsQuery, matchCount: number): Promise<SearchMatch[]>;
 }
 
 const INSERT_BATCH_SIZE = 100;
@@ -63,6 +67,21 @@ export function createSupabaseClient(
     return rows.map((r) => r.id);
   }
 
+  async function callRpc(rpc: MatchDocumentsRpc, body: Record<string, unknown>): Promise<unknown> {
+    const response = await request(
+      fetchImpl,
+      `${supabaseUrl.replace(/\/$/, "")}/rest/v1/rpc/${rpc}`,
+      serviceRoleKey,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json", "accept-profile": "public" },
+        body: JSON.stringify(body),
+      },
+    );
+
+    return response.json();
+  }
+
   return {
     async insertDocuments(rows) {
       for (let i = 0; i < rows.length; i += INSERT_BATCH_SIZE) {
@@ -97,33 +116,31 @@ export function createSupabaseClient(
       return ids.length;
     },
 
-    async matchDocuments(rpc, queryEmbedding, matchCount) {
-      const response = await request(
-        fetchImpl,
-        `${supabaseUrl.replace(/\/$/, "")}/rest/v1/rpc/${rpc}`,
-        serviceRoleKey,
-        {
-          method: "POST",
-          headers: { "content-type": "application/json", "accept-profile": "public" },
-          body: JSON.stringify({
-            query_embedding: `[${queryEmbedding.join(",")}]`,
-            match_count: matchCount,
-          }),
-        },
-      );
+    async matchDocuments(query, matchCount) {
+      if (query.rpc === "match_documents_keyword") {
+        const rows = (await callRpc(query.rpc, {
+          query_text: query.queryText,
+          match_count: matchCount,
+        })) as { id: number; content: string; source_url: string; score: number }[];
 
-      const rows = (await response.json()) as {
-        id: number;
-        content: string;
-        source_url: string;
-        similarity: number;
-      }[];
+        return rows.map(({ id, content, source_url, score }) => ({
+          id,
+          content,
+          sourceUrl: source_url,
+          score,
+        }));
+      }
 
-      return rows.map((r) => ({
-        id: r.id,
-        content: r.content,
-        sourceUrl: r.source_url,
-        similarity: r.similarity,
+      const rows = (await callRpc(query.rpc, {
+        query_embedding: `[${query.queryEmbedding.join(",")}]`,
+        match_count: matchCount,
+      })) as { id: number; content: string; source_url: string; similarity: number }[];
+
+      return rows.map(({ id, content, source_url, similarity }) => ({
+        id,
+        content,
+        sourceUrl: source_url,
+        score: similarity,
       }));
     },
   };

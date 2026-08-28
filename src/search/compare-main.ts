@@ -1,8 +1,9 @@
 import { requiredEnv } from "../env.js";
 import { createOpenRouterEmbedder } from "../kb/embeddings.js";
 import { createSupabaseClient } from "../kb/supabase.js";
-import type { RankedMatch } from "./compare.js";
+import { COMPARE_MODES, type QueryComparison } from "./compare.js";
 import { compareQuery } from "./compare.js";
+import type { SearchMode } from "./search.js";
 
 function title(sourceUrl: string): string {
   const page = sourceUrl.split("/wiki/")[1] ?? sourceUrl;
@@ -14,10 +15,36 @@ function snippet(content: string, length = 140): string {
   return flat.length > length ? `${flat.slice(0, length)}…` : flat;
 }
 
-function printSide(label: string, rankedMatches: readonly RankedMatch[]): void {
-  console.log(`  ${label}:`);
+function modeLabel(mode: SearchMode): string {
+  return mode === "keyword" ? "keyword" : `${mode}-dim`;
+}
+
+function printSide(mode: SearchMode, comparison: QueryComparison): void {
+  console.log(`  ${modeLabel(mode)}:`);
+  const rankedMatches = comparison.results[mode];
+  if (rankedMatches.length === 0) {
+    console.log("    (no results)");
+    return;
+  }
   for (const { rank, match } of rankedMatches) {
-    console.log(`    ${rank}. [${match.similarity.toFixed(4)}] ${title(match.sourceUrl)} — ${snippet(match.content)}`);
+    console.log(`    ${rank}. [${match.score.toFixed(4)}] ${title(match.sourceUrl)} — ${snippet(match.content)}`);
+  }
+}
+
+function printComparison(comparison: QueryComparison): void {
+  const { resultsDiffer, topResultDiffers, rankChanges, onlyIn } = comparison.comparison;
+  if (!resultsDiffer) {
+    console.log("  identical");
+    return;
+  }
+  const uniqueCounts = COMPARE_MODES.map((mode) => `${onlyIn[mode].length} only-${modeLabel(mode)}`).join("; ");
+  console.log(
+    `  DIFFERS (top result ${topResultDiffers ? "differs" : "same"}; ${rankChanges.length} rank change(s); ${uniqueCounts})`,
+  );
+  for (const mode of COMPARE_MODES) {
+    for (const { rank, match } of onlyIn[mode]) {
+      console.log(`    only in ${modeLabel(mode)}: #${rank} [${match.score.toFixed(4)}] ${title(match.sourceUrl)}`);
+    }
   }
 }
 
@@ -32,17 +59,13 @@ async function main(): Promise<void> {
   const db = createSupabaseClient(requiredEnv("SUPABASE_URL"), requiredEnv("SUPABASE_SERVICE_ROLE"));
 
   for (const query of queries) {
-    const { at768, at3072, comparison } = await compareQuery(query, { embed, db });
+    const comparison = await compareQuery(query, { embed, db });
 
     console.log(`\n=== "${query}" ===`);
-    printSide("768", at768);
-    printSide("3072", at3072);
-
-    console.log(
-      comparison.resultsDiffer
-        ? `  DIFFERS (top result ${comparison.topResultDiffers ? "differs" : "same"}; ${comparison.rankChanges.length} rank change(s); ${comparison.onlyIn768.length} only-768; ${comparison.onlyIn3072.length} only-3072)`
-        : "  identical",
-    );
+    for (const mode of COMPARE_MODES) {
+      printSide(mode, comparison);
+    }
+    printComparison(comparison);
   }
 }
 

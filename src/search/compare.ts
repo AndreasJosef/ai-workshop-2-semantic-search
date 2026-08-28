@@ -1,6 +1,8 @@
-import type { EmbedDimensions } from "../kb/embeddings.js";
+import type { SearchMode, SearchDeps } from "./search.js";
+import { searchDocuments } from "./search.js";
 import type { SearchMatch } from "../kb/supabase.js";
-import { searchDocuments, type SearchDeps } from "./search.js";
+
+export const COMPARE_MODES: readonly SearchMode[] = [768, 3072, "keyword"];
 
 export interface RankedMatch {
   rank: number;
@@ -10,57 +12,71 @@ export interface RankedMatch {
 export interface RankChange {
   id: number;
   sourceUrl: string;
-  rank768: number;
-  rank3072: number;
+  ranks: Partial<Record<SearchMode, number>>;
 }
 
 export interface ResultComparison {
-  onlyIn768: RankedMatch[];
-  onlyIn3072: RankedMatch[];
+  onlyIn: Record<SearchMode, RankedMatch[]>;
   rankChanges: RankChange[];
   topResultDiffers: boolean;
   resultsDiffer: boolean;
+}
+
+export interface QueryComparison {
+  query: string;
+  results: Record<SearchMode, RankedMatch[]>;
+  comparison: ResultComparison;
 }
 
 export function ranked(results: readonly SearchMatch[]): RankedMatch[] {
   return results.map((result, i) => ({ rank: i + 1, match: result }));
 }
 
-export function compareResults(at768: readonly SearchMatch[], at3072: readonly SearchMatch[]): ResultComparison {
-  const rankBy768 = new Map(at768.map((m, i) => [m.id, i + 1]));
-  const rankBy3072 = new Map(at3072.map((m, i) => [m.id, i + 1]));
-
-  const onlyIn768 = ranked(at768).filter(({ match: m }) => !rankBy3072.has(m.id));
-  const onlyIn3072 = ranked(at3072).filter(({ match: m }) => !rankBy768.has(m.id));
-
-  const rankChanges: RankChange[] = [];
-  for (const [id, rank768] of rankBy768) {
-    const rank3072 = rankBy3072.get(id);
-    const sourceUrl = at768[rank768 - 1]?.sourceUrl;
-    if (rank3072 !== undefined && rank3072 !== rank768 && sourceUrl !== undefined) {
-      rankChanges.push({
-        id,
-        sourceUrl,
-        rank768,
-        rank3072,
-      });
+export function compareResults(resultsByMode: Readonly<Record<SearchMode, readonly SearchMatch[]>>): ResultComparison {
+  const rankedByMode = new Map(COMPARE_MODES.map((mode) => [mode, ranked(resultsByMode[mode])]));
+  const ranksById = new Map<number, { sourceUrl: string; ranks: Partial<Record<SearchMode, number>> }>();
+  for (const mode of COMPARE_MODES) {
+    for (const { rank, match } of rankedByMode.get(mode)!) {
+      const entry = ranksById.get(match.id);
+      if (entry) {
+        entry.ranks[mode] = rank;
+      } else {
+        ranksById.set(match.id, { sourceUrl: match.sourceUrl, ranks: { [mode]: rank } });
+      }
     }
   }
 
-  const top768 = at768[0]?.id;
-  const top3072 = at3072[0]?.id;
-  const topResultDiffers = top768 !== top3072;
+  const onlyIn = Object.fromEntries(
+    COMPARE_MODES.map((mode) => [
+      mode,
+      rankedByMode.get(mode)!.filter(({ match }) => {
+        const entry = ranksById.get(match.id)!;
+        return COMPARE_MODES.filter((other) => entry.ranks[other] !== undefined).length === 1;
+      }),
+    ]),
+  ) as Record<SearchMode, RankedMatch[]>;
+
+  const rankChanges: RankChange[] = [];
+  for (const [id, entry] of ranksById) {
+    const ranks = Object.values(entry.ranks);
+    const appearsInMultipleModes = ranks.length > 1;
+    const allRanksEqual = ranks.every((rank) => rank === ranks[0]);
+    if (appearsInMultipleModes && !allRanksEqual) {
+      rankChanges.push({ id, sourceUrl: entry.sourceUrl, ranks: entry.ranks });
+    }
+  }
+
+  const topIds = COMPARE_MODES.map((mode) => resultsByMode[mode][0]?.id);
+  const topResultDiffers = topIds.some((id) => id !== topIds[0]);
+  const referenceIds = resultsByMode[COMPARE_MODES[0]!].map((m) => m.id);
   const resultsDiffer =
-    topResultDiffers || at768.length !== at3072.length || at768.some((m, i) => m.id !== at3072[i]?.id);
+    topResultDiffers ||
+    COMPARE_MODES.some((mode) => {
+      const ids = resultsByMode[mode].map((m) => m.id);
+      return ids.length !== referenceIds.length || ids.some((id, i) => id !== referenceIds[i]);
+    });
 
-  return { onlyIn768, onlyIn3072, rankChanges, topResultDiffers, resultsDiffer };
-}
-
-export interface QueryComparison {
-  query: string;
-  at768: RankedMatch[];
-  at3072: RankedMatch[];
-  comparison: ResultComparison;
+  return { onlyIn, rankChanges, topResultDiffers, resultsDiffer };
 }
 
 export async function compareQuery(
@@ -68,10 +84,18 @@ export async function compareQuery(
   deps: SearchDeps,
   options: { matchCount?: number } = {},
 ): Promise<QueryComparison> {
-  const [at768, at3072] = await Promise.all([
-    searchDocuments(query, 768 satisfies EmbedDimensions, deps, options),
-    searchDocuments(query, 3072 satisfies EmbedDimensions, deps, options),
-  ]);
+  const resultsByMode = Object.fromEntries(
+    await Promise.all(
+      COMPARE_MODES.map(async (mode) => [mode, await searchDocuments(query, mode, deps, options)] as const),
+    ),
+  ) as Record<SearchMode, SearchMatch[]>;
 
-  return { query, at768: ranked(at768), at3072: ranked(at3072), comparison: compareResults(at768, at3072) };
+  return {
+    query,
+    results: Object.fromEntries(COMPARE_MODES.map((mode) => [mode, ranked(resultsByMode[mode])])) as Record<
+      SearchMode,
+      RankedMatch[]
+    >,
+    comparison: compareResults(resultsByMode),
+  };
 }

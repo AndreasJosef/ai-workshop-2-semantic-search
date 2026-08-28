@@ -114,7 +114,7 @@ describe("createSupabaseClient", () => {
 });
 
 describe("createSupabaseClient.matchDocuments", () => {
-  it("posts to the given RPC with the query embedding and match count", async () => {
+  it("posts to the 768 RPC with the query embedding and match count", async () => {
     const fetchImpl = vi.fn(async () =>
       ({
         ok: true,
@@ -124,7 +124,7 @@ describe("createSupabaseClient.matchDocuments", () => {
     );
     const db = createSupabaseClient(URL, KEY, fetchImpl);
 
-    const results = await db.matchDocuments("match_documents_768", [0.1, 0.2], 5);
+    const results = await db.matchDocuments({ rpc: "match_documents_768", queryEmbedding: [0.1, 0.2] }, 5);
 
     const [input, init] = (fetchImpl as ReturnType<typeof vi.fn>).mock.calls[0] as [
       string,
@@ -147,7 +147,45 @@ describe("createSupabaseClient.matchDocuments", () => {
         id: 1,
         content: "The One Power",
         sourceUrl: "https://wot.fandom.com/wiki/One_Power",
-        similarity: 0.91,
+        score: 0.91,
+      },
+    ]);
+  });
+
+  it("posts to match_documents_keyword with the query text and match count", async () => {
+    const fetchImpl = vi.fn(async () =>
+      ({
+        ok: true,
+        status: 200,
+        json: async () => [{ id: 2, content: "The White Tower", source_url: "https://wot.fandom.com/wiki/White_Tower", score: 0.0731 }],
+      }) as unknown as Response,
+    );
+    const db = createSupabaseClient(URL, KEY, fetchImpl);
+
+    const results = await db.matchDocuments({ rpc: "match_documents_keyword", queryText: "the white tower" }, 5);
+
+    const [input, init] = (fetchImpl as ReturnType<typeof vi.fn>).mock.calls[0] as [
+      string,
+      RequestInit,
+    ];
+    expect(input).toBe(`${URL}/rest/v1/rpc/match_documents_keyword`);
+    expect(init.method).toBe("POST");
+    expect(init.headers).toMatchObject({
+      apikey: KEY,
+      authorization: `Bearer ${KEY}`,
+      "content-type": "application/json",
+      "accept-profile": "public",
+    });
+    expect(JSON.parse(init.body as string)).toEqual({
+      query_text: "the white tower",
+      match_count: 5,
+    });
+    expect(results).toEqual([
+      {
+        id: 2,
+        content: "The White Tower",
+        sourceUrl: "https://wot.fandom.com/wiki/White_Tower",
+        score: 0.0731,
       },
     ]);
   });
@@ -157,6 +195,6 @@ describe("createSupabaseClient.matchDocuments", () => {
       ({ ok: false, status: 500, statusText: "Internal Server Error" }) as unknown as Response;
     const db = createSupabaseClient(URL, KEY, fetchImpl);
 
-    await expect(db.matchDocuments("match_documents_3072", [0.1], 5)).rejects.toThrow(/HTTP 500/);
+    await expect(db.matchDocuments({ rpc: "match_documents_3072", queryEmbedding: [0.1] }, 5)).rejects.toThrow(/HTTP 500/);
   });
 });

@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
-import type { EmbedDimensions } from "../kb/embeddings.js";
+import type { SearchMode } from "./search.js";
 import type { SearchMatch } from "../kb/supabase.js";
 import { createSearchServer } from "./server.js";
 
@@ -8,13 +8,13 @@ const RESULT: SearchMatch = {
   id: 1,
   content: "The One Power is the force that drives the Wheel of Time.",
   sourceUrl: "https://wot.fandom.com/wiki/One_Power",
-  similarity: 0.91,
+  score: 0.91,
 };
 
 describe("createSearchServer", () => {
   let baseUrl: string;
   let close: () => Promise<void>;
-  const search = vi.fn(async (_query: string, _dimensions: EmbedDimensions) => [RESULT]);
+  const search = vi.fn(async (_query: string, _mode: SearchMode) => [RESULT]);
 
   beforeAll(async () => {
     const server = createSearchServer({ search });
@@ -45,13 +45,19 @@ describe("createSearchServer", () => {
     expect(search).toHaveBeenCalledWith("rand", 3072);
   });
 
+  it("passes keyword mode through to the search", async () => {
+    await fetch(`${baseUrl}/api/search?q=rand&dim=keyword`);
+
+    expect(search).toHaveBeenCalledWith("rand", "keyword");
+  });
+
   it("rejects a request without a query string", async () => {
     const response = await fetch(`${baseUrl}/api/search?dim=768`);
 
     expect(response.status).toBe(400);
   });
 
-  it("rejects a dimension that is neither 768 nor 3072", async () => {
+  it("rejects a dimension that is neither 768, 3072 nor keyword", async () => {
     const response = await fetch(`${baseUrl}/api/search?q=rand&dim=1536`);
 
     expect(response.status).toBe(400);

@@ -2,18 +2,19 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 
-import type { EmbedDimensions } from "../kb/embeddings.js";
+import type { SearchMode } from "./search.js";
 import type { SearchMatch } from "../kb/supabase.js";
 
 export interface SearchServerDeps {
-  search: (query: string, dimensions: EmbedDimensions) => Promise<SearchMatch[]>;
+  search: (query: string, mode: SearchMode) => Promise<SearchMatch[]>;
 }
 
 const INDEX_HTML_PATH = fileURLToPath(new URL("./index.html", import.meta.url));
 
-function parseDimensions(raw: string | null): EmbedDimensions | undefined {
+function parseMode(raw: string | null): SearchMode | undefined {
   if (raw === "768") return 768;
   if (raw === "3072") return 3072;
+  if (raw === "keyword") return "keyword";
   return undefined;
 }
 
@@ -33,21 +34,21 @@ async function handleSearchRequest(
 ): Promise<void> {
   const url = new URL(req.url ?? "/", "http://localhost");
   const query = url.searchParams.get("q")?.trim();
-  const dimensions = parseDimensions(url.searchParams.get("dim"));
+  const mode = parseMode(url.searchParams.get("dim"));
 
   if (!query) {
     sendJson(res, 400, { error: "Missing required query parameter: q" });
     return;
   }
 
-  if (!dimensions) {
-    sendJson(res, 400, { error: "Query parameter dim must be 768 or 3072" });
+  if (!mode) {
+    sendJson(res, 400, { error: "Query parameter dim must be 768, 3072, or keyword" });
     return;
   }
 
   try {
-    const results = await deps.search(query, dimensions);
-    sendJson(res, 200, { query, dimensions, results });
+    const results = await deps.search(query, mode);
+    sendJson(res, 200, { query, mode, results });
   } catch (error) {
     sendJson(res, 500, { error: errorMessage(error) });
   }
