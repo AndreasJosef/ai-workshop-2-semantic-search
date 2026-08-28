@@ -14,9 +14,9 @@ function snippet(content: string, length = 140): string {
   return flat.length > length ? `${flat.slice(0, length)}…` : flat;
 }
 
-function printSide(label: string, ranked: readonly RankedMatch[]): void {
+function printSide(label: string, rankedMatches: readonly RankedMatch[]): void {
   console.log(`  ${label}:`);
-  for (const { rank, match } of ranked) {
+  for (const { rank, match } of rankedMatches) {
     console.log(`    ${rank}. [${match.similarity.toFixed(4)}] ${title(match.sourceUrl)} — ${snippet(match.content)}`);
   }
 }

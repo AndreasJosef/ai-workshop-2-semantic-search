@@ -26,10 +26,6 @@ export function ranked(results: readonly SearchMatch[]): RankedMatch[] {
   return results.map((result, i) => ({ rank: i + 1, match: result }));
 }
 
-export function match(rank: number, result: SearchMatch): RankedMatch {
-  return { rank, match: result };
-}
-
 export function compareResults(at768: readonly SearchMatch[], at3072: readonly SearchMatch[]): ResultComparison {
   const rankBy768 = new Map(at768.map((m, i) => [m.id, i + 1]));
   const rankBy3072 = new Map(at3072.map((m, i) => [m.id, i + 1]));

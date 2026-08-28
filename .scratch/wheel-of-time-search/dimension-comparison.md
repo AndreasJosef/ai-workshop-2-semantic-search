@@ -2,12 +2,14 @@
 
 Evidence for issue [05](./issues/05-document-dimension-comparison.md): five queries where the top results genuinely differ between the two embedding dimensions, with the observed rankings and a short analysis of why they diverge.
 
-All results were gathered with the same code path the web UI uses (`src/search/search.ts` — embed the query with `gemini-embedding-001` at the chosen dimension, then call the matching RPC). The rankings below are reproducible with:
+All results were gathered with the same code path the web UI uses (`src/search/search.ts` — embed the query with `gemini-embedding-001` at the chosen dimension, then call the matching RPC); the first query below was additionally cross-checked end-to-end through the running app's `/api/search` endpoint, which is what the UI's 768/3072 toggle calls. The rankings below are reproducible with:
 
 ```sh
-pnpm compare -- "How does one become an Aes Sedai?" "Who is Lews Therin Telamon?" \
-  "What happened at Tarmon Gai'don?" "What is the Great Game Daes Dae'mar?" "What are the Seanchan like?"
+pnpm compare -- "How does one become an Aes Sedai?" "Who is Nynaeve?" \
+  "Who is Lews Therin Telamon?" "What happened at Tarmon Gai'don?" "What is the Great Game Daes Dae'mar?"
 ```
+
+Of the five, two ("How does one become an Aes Sedai?", "Who is Nynaeve?") have a genuinely different **top-1 result**; the other three have identical or agreeing top results with genuinely different rankings or result sets just below.
 
 ## Setup
 
@@ -29,13 +31,27 @@ pnpm compare -- "How does one become an Aes Sedai?" "Who is Lews Therin Telamon?
 
 **Why it likely diverges:** the 768 embedding is a compressed (Matryoshka-style) projection of the same model's representation, so fine distinctions between *near-tied* chunks blur: here #1 and #2 are separated by only 0.0016 at 768. At 3072 the finer geometry clearly prefers the definitional chunk ("what an Aes Sedai is and how they are trained") over the procedural "once Accepted" chunk, which the 768 truncation had promoted for matching the literal wording "become". The rank-4 difference is the same effect at a lower similarity band: the compressed 768 space keeps the on-topic hierarchy chunk, while 3072 pulls in the historically-related One Power chunk that mentions Aes Sedai's origin.
 
-## Query 2: "Who is Lews Therin Telamon?" — top-1 agrees, tail reshuffles
+## Query 2: "Who is Nynaeve?" — 768 misses the person entirely
+
+| Rank | 768 | similarity | 3072 | similarity |
+|---|---|---|---|---|
+| 1 | Moiraine Damodred — the name's connection to the Moirae | 0.6740 | Channeling — Rand and Nynaeve cleanse the taint from saidin | 0.6949 |
+| 2 | Ta'veren — "the savor"… two ta'veren strain the world | 0.6728 | Moiraine Damodred — notable as a channeler, born with the ability | 0.6904 |
+| 3 | Moiraine Damodred — notable as a channeler | 0.6711 | Ta'veren — "the savor"… | 0.6890 |
+| 4 | Channeling — cleansing of saidin by Rand and Nynaeve | 0.6686 | Moiraine Damodred — the Moirae name connection | 0.6862 |
+| 5 | Egwene al'Vere — youngest daughter of the Mayor of Emond's Field | 0.6682 | Egwene al'Vere — youngest daughter of the Mayor of Emond's Field | 0.6822 |
+
+**What differs:** the top-1 result is a different chunk from a different article, and the whole ranking reorders — only Egwene's chunk stays at rank 5.
+
+**Why it likely diverges:** the corpus has no Nynaeve al'Meara page, so this is again a test of how each dimension generalizes around a missing entity. 3072 puts the one chunk that features Nynaeve doing something central (cleansing saidin) at #1 with a clear margin. The compressed 768 space instead lands on the etymology chunk about *Moiraine's* name — a chunk that never mentions Nynaeve at all — as its top hit. This is the sharpest quality gap in the comparison: at 768 the query's only real evidence (the cleansing chunk) sinks to rank 4, while 3072 recognizes it as the answer.
+
+## Query 3: "Who is Lews Therin Telamon?" — top-1 agrees, tail reshuffles
 
 | Rank | 768 | similarity | 3072 | similarity |
 |---|---|---|---|---|
 | 1 | The Eye of the World — prologue "Dragonmount" set in the Age of Legends | 0.7292 | The Eye of the World — prologue "Dragonmount" | 0.7289 |
 | 2 | Rand al'Thor — Taint-induced madness | 0.7120 | Rand al'Thor — "reincarnation of the soul of Lews Therin Telamon, first named Dragon during the War of Power" | 0.7180 |
-| 3 | Rand al'Thor — "reincarnation… first named Dragon" | 0.7137 | Rand al'Thor — Taint-induced madness | 0.7148 |
+| 3 | Rand al'Thor — "reincarnation… first named Dragon" | 0.7061 | Rand al'Thor — Taint-induced madness | 0.7148 |
 | 4 | Rand al'Thor — Nynaeve Healing the Taint | 0.7022 | Rand al'Thor — "reincarnation… also known as the Dragon" | 0.7131 |
 | 5 | Rand al'Thor — "reincarnation… also known as the Dragon" | 0.7009 | Rand al'Thor — Nynaeve Healing the Taint | 0.7116 |
 
@@ -43,7 +59,7 @@ pnpm compare -- "How does one become an Aes Sedai?" "Who is Lews Therin Telamon?
 
 **Why it likely diverges:** the corpus has no dedicated Lews Therin page, so both dimensions reach for the Rand al'Thor chunks that mention him. The 3072 embedding promotes the two chunks that literally name "Lews Therin Telamon" and state his identity (reincarnation/Dragon) above the Taint-madness storyline chunks; the compressed 768 representation, which carries less of that fine name-identity signal, ranks by broader topical neighborhood instead (madness, Dragon, Taint) and puts the madness chunk at #2. Notably the two dimensions even disagree about which chunk is *best* among near-ties while agreeing on the EotW prologue at #1 — the one chunk that talks about Lews Therin in his own historical context rather than through Rand.
 
-## Query 3: "What happened at Tarmon Gai'don?" — different failure modes
+## Query 4: "What happened at Tarmon Gai'don?" — different failure modes
 
 | Rank | 768 | similarity | 3072 | similarity |
 |---|---|---|---|---|
@@ -57,7 +73,7 @@ pnpm compare -- "How does one become an Aes Sedai?" "Who is Lews Therin Telamon?
 
 **Why it likely diverges:** the corpus contains no Tarmon Gai'don/Last Battle article (it is a curated 20-page subset), so this query is a stress test of how each dimension *fails*. Both fall back to "large battle with the Dark One's forces nearby" chunks, but they weight the neighborhood differently: 3072's finer space groups the messianic-prophecy cluster (Dragonmount birth at the end of a final battle) with the eschatological query, while 768 stays with literal battle-report chunks. Similarities also run systematically higher at 3072 (top-1 0.6773 vs 0.6618) — the two score scales are not directly comparable, only rankings are.
 
-## Query 4: "What is the Great Game Daes Dae'mar?" — disjoint tails
+## Query 5: "What is the Great Game Daes Dae'mar?" — disjoint tails
 
 | Rank | 768 | similarity | 3072 | similarity |
 |---|---|---|---|---|
@@ -71,27 +87,15 @@ pnpm compare -- "How does one become an Aes Sedai?" "Who is Lews Therin Telamon?
 
 **Why it likely diverges:** there is no Daes Dae'mar article in the corpus, so both dimensions must generalize from "scheming among factions". The compressed 768 space latches onto surface-adjacent fragments of intrigue (a secret letter, a control device), while 3072 retrieves chunks that are thematically adjacent to power politics and institutional maneuvering (succession lists, faction histories). With no exact match available, the two spaces' different generalization behavior becomes visible as a disjoint tail.
 
-## Query 5: "What are the Seanchan like?" — same page, different chunk order
-
-| Rank | 768 | similarity | 3072 | similarity |
-|---|---|---|---|---|
-| 1 | Seanchan — land 3,000 leagues west, across the Aryth Ocean | 0.7692 | Seanchan — land across the Aryth Ocean | 0.7780 |
-| 2 | Seanchan — likened to Imperial China, Japan, Persia, the Ottomans | 0.7509 | Seanchan — likened to imperialistic nations | 0.7621 |
-| 3 | Seanchan — rule by an Empress from the Crystal Throne | 0.7347 | Seanchan — "pronounced SHAWN-chan… founded after the Trolloc Wars" | 0.7435 |
-| 4 | Seanchan — "pronounced SHAWN-chan… founded after the Trolloc Wars" | 0.7310 | Seanchan — the Ever Victorious Army | 0.7434 |
-| 5 | Seanchan — the Ever Victorious Army | 0.7274 | Seanchan — rule by an Empress from the Crystal Throne | 0.7432 |
-
-**What differs:** the identical five chunks from the identical article, but ranks 3/4/5 permute — the governance chunk drops 3→5 at 3072 while the pronunciation/founding chunk rises 4→3.
-
-**Why it likely diverges:** this is the cleanest example of pure geometry differences with no corpus-gap confound: all five candidates come from one article, so the RPC is ranking near-duplicate chunks against each other. At 768 the chunk describing *how the empire is ruled* edges out the definitional chunk; at 3072 the definitional chunk ("what the Seanchan are, where the name comes from") is judged more similar to the vague "what are they like" query. When candidates are this close (0.73–0.78), the extra resolution of 3072 is exactly what reorders them.
-
 ## Overall observations
 
-1. **Rankings agree on clear-cut cases and diverge on close calls.** In every query above, churn concentrates where similarities are tightly clustered (within a few thousandths). "Tell me about the Aiel Waste" and "What is the One Power?" produced *identical* top-5s at both dimensions — the differences appear at the margin, not wholesale.
+1. **Rankings agree on clear-cut cases and diverge on close calls.** In every query above, churn concentrates where similarities are tightly clustered (within a few thousandths). "Tell me about the Aiel Waste", "What is the One Power?" and "Who is Egwene al'Vere?" produced *identical* top-5s at both dimensions during the same runs — the differences appear at the margin, not wholesale.
 2. **The 768 scores are consistently lower than the 3072 scores for the same query/result pairs** (typically 0.01–0.04 lower here). The 768 vectors are a compressed projection of the same model, so the two similarity scales are not comparable; only the ordering within a dimension is meaningful.
-3. **Divergence concentrates where the corpus has no good answer.** For queries with a dedicated page ("One Power", "Seanchan", "Rand al'Thor"), both dimensions converge on the same page. For queries about topics outside the curated 20 pages (Tarmon Gai'don, Daes Dae'mar, Lews Therin as a person), each dimension generalizes differently and the tail results split.
-4. **3072 shows finer within-page discrimination** (queries 1 and 5), tending to rank the chunk that *defines* the queried entity above chunks that merely discuss it, while 768 leans slightly more on surface wording of the query ("become", "gate").
+3. **Divergence concentrates where the corpus has no good answer.** For queries with a dedicated page ("One Power", "Seanchan", "Rand al'Thor"), both dimensions converge on the same page. For queries about topics outside the curated 20 pages (Nynaeve, Tarmon Gai'don, Daes Dae'mar, Lews Therin as a person), each dimension generalizes differently — and 768's generalization is the one that goes wrong most visibly (query 2).
+4. **3072 shows finer within-page discrimination** (queries 1 and 3), tending to rank the chunk that *defines* the queried entity above chunks that merely discuss it, while 768 leans slightly more on surface wording of the query ("become").
+
+Additional runs kept out of the five (e.g. "What are the Seanchan like?", where the same five chunks from one article permute in ranks 3–5, or "How do gateways for Traveling work?", where both dimensions miss a topic the corpus lacks) show the same patterns and can be regenerated with the command above.
 
 ## Attribution
 
-All retrieved text is from the Wheel of Time Fandom wiki ([wot.fandom.com](https://wot.fandom.com)), licensed under [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/). Article names above link to their source pages via the `source_url` stored on each chunk.
+All retrieved text is from the Wheel of Time Fandom wiki ([wot.fandom.com](https://wot.fandom.com)), licensed under [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/). Each chunk's source page is `https://wot.fandom.com/wiki/<Article>` for the article named in the tables (the exact `source_url` is stored on every chunk in the database and printed in full by `pnpm compare`).
