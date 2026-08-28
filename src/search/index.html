@@ -1,0 +1,223 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Wheel of Time — Semantic Search</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        font-family: system-ui, sans-serif;
+      }
+      body {
+        max-width: 46rem;
+        margin: 0 auto;
+        padding: 2rem 1rem;
+        background: #14100d;
+        color: #e8e0d4;
+        line-height: 1.5;
+      }
+      h1 {
+        font-size: 1.6rem;
+        margin: 0 0 0.25rem;
+      }
+      .subtitle {
+        color: #a89f90;
+        font-size: 0.9rem;
+        margin: 0 0 1.5rem;
+      }
+      form {
+        display: flex;
+        gap: 0.5rem;
+        flex-wrap: wrap;
+      }
+      input[type="search"] {
+        flex: 1 1 18rem;
+        padding: 0.6rem 0.8rem;
+        border-radius: 6px;
+        border: 1px solid #4a4036;
+        background: #1e1913;
+        color: inherit;
+        font-size: 1rem;
+      }
+      button {
+        padding: 0.6rem 1.2rem;
+        border-radius: 6px;
+        border: 1px solid #4a4036;
+        background: #35492f;
+        color: inherit;
+        font-size: 1rem;
+        cursor: pointer;
+      }
+      button:disabled {
+        opacity: 0.6;
+        cursor: default;
+      }
+      .dim-toggle {
+        display: inline-flex;
+        border: 1px solid #4a4036;
+        border-radius: 6px;
+        overflow: hidden;
+      }
+      .dim-toggle label {
+        padding: 0.6rem 1rem;
+        cursor: pointer;
+        background: #1e1913;
+        user-select: none;
+      }
+      .dim-toggle input {
+        display: none;
+      }
+      .dim-toggle label:has(input:checked) {
+        background: #6b5a2e;
+        font-weight: 600;
+      }
+      #status {
+        color: #a89f90;
+        font-size: 0.9rem;
+        min-height: 1.4em;
+        margin: 1rem 0 0.5rem;
+      }
+      #status.error {
+        color: #e07a5f;
+      }
+      article {
+        border: 1px solid #4a4036;
+        border-radius: 8px;
+        padding: 0.9rem 1.1rem;
+        margin: 0.75rem 0;
+        background: #1e1913;
+      }
+      .similarity {
+        float: right;
+        color: #c9b26b;
+        font-variant-numeric: tabular-nums;
+        font-size: 0.85rem;
+      }
+      .snippet {
+        margin: 0.4rem 0 0.6rem;
+        white-space: pre-wrap;
+      }
+      a {
+        color: #9ec1a8;
+        font-size: 0.85rem;
+      }
+      .attribution {
+        color: #7d7466;
+        font-size: 0.75rem;
+        margin: 0.2rem 0 0;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Wheel of Time — Semantic Search</h1>
+    <p class="subtitle">
+      Semantic search over the Wheel of Time Fandom wiki (CC BY-SA), embedded at two dimensions.
+    </p>
+
+    <form id="search-form">
+      <div class="dim-toggle" role="radiogroup" aria-label="Embedding dimensions">
+        <label><input type="radio" name="dim" value="768" checked />768-dim</label>
+        <label><input type="radio" name="dim" value="3072" />3072-dim</label>
+      </div>
+      <input
+        type="search"
+        id="query"
+        name="q"
+        placeholder="e.g. What is the One Power?"
+        autocomplete="off"
+        autofocus
+      />
+      <button type="submit">Search</button>
+    </form>
+
+    <p id="status"></p>
+    <main id="results"></main>
+
+    <script>
+      const form = document.getElementById("search-form");
+      const statusEl = document.getElementById("status");
+      const resultsEl = document.getElementById("results");
+      const SNIPPET_LENGTH = 280;
+      let lastQuery = null;
+
+      function snippet(text) {
+        return text.length > SNIPPET_LENGTH ? text.slice(0, SNIPPET_LENGTH).trimEnd() + "…" : text;
+      }
+
+      function currentDimensions() {
+        return form.elements.dim.value;
+      }
+
+      async function runSearch(query, dimensions) {
+        lastQuery = query;
+        statusEl.className = "";
+        statusEl.textContent = `Searching at ${dimensions} dimensions…`;
+        resultsEl.replaceChildren();
+        try {
+          const response = await fetch(`/api/search?q=${encodeURIComponent(query)}&dim=${dimensions}`);
+          const body = await response.json();
+          if (!response.ok) {
+            throw new Error(body.error ?? `Search failed (HTTP ${response.status})`);
+          }
+          renderResults(body.results, dimensions);
+        } catch (error) {
+          statusEl.className = "error";
+          statusEl.textContent = error.message;
+        }
+      }
+
+      function renderResults(results, dimensions) {
+        statusEl.className = "";
+        statusEl.textContent = `${results.length} matches at ${dimensions} dimensions for “${lastQuery}”`;
+        for (const { content, similarity, sourceUrl } of results) {
+          const article = document.createElement("article");
+          const score = document.createElement("span");
+          score.className = "similarity";
+          score.textContent = `similarity ${similarity.toFixed(4)}`;
+          const text = document.createElement("p");
+          text.className = "snippet";
+          text.textContent = snippet(content);
+          const link = document.createElement("a");
+          link.href = sourceUrl;
+          link.textContent = "Source article";
+          const attribution = document.createElement("p");
+          attribution.className = "attribution";
+          const license = document.createElement("a");
+          license.href = "https://creativecommons.org/licenses/by-sa/4.0/";
+          license.textContent = "CC BY-SA 4.0";
+          attribution.append("Text from the Wheel of Time Fandom wiki, licensed under ");
+          attribution.append(license);
+          attribution.append(".");
+          article.append(score, text, link, attribution);
+          resultsEl.append(article);
+        }
+      }
+
+      form.addEventListener("submit", (event) => {
+        event.preventDefault();
+        const query = form.elements.q.value.trim();
+        if (!query) return;
+        history.replaceState(null, "", `?q=${encodeURIComponent(query)}&dim=${currentDimensions()}`);
+        runSearch(query, currentDimensions());
+      });
+
+      form.elements.dim.forEach((radio) => {
+        radio.addEventListener("change", () => {
+          if (radio.checked && lastQuery) {
+            runSearch(lastQuery, currentDimensions());
+          }
+        });
+      });
+
+      const params = new URLSearchParams(location.search);
+      if (params.get("q")) {
+        const query = params.get("q");
+        const dim = params.get("dim") === "3072" ? "3072" : "768";
+        form.elements.q.value = query;
+        form.elements.dim.value = dim;
+        runSearch(query, dim);
+      }
+    </script>
+  </body>
+</html>

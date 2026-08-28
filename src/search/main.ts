@@ -1,0 +1,26 @@
+import { requiredEnv } from "../env.js";
+import { createOpenRouterEmbedder } from "../kb/embeddings.js";
+import { createSupabaseClient } from "../kb/supabase.js";
+import { searchDocuments } from "./search.js";
+import { createSearchServer } from "./server.js";
+
+const DEFAULT_PORT = 3000;
+
+function main(): void {
+  const openRouterApiKey = requiredEnv("OPENROUTER_API_KEY");
+  const supabaseUrl = requiredEnv("SUPABASE_URL");
+  const supabaseServiceRole = requiredEnv("SUPABASE_SERVICE_ROLE");
+  const port = Number(process.env.PORT ?? DEFAULT_PORT);
+
+  const embed = createOpenRouterEmbedder(openRouterApiKey);
+  const db = createSupabaseClient(supabaseUrl, supabaseServiceRole);
+  const server = createSearchServer({
+    search: (query, dimensions) => searchDocuments(query, dimensions, { embed, db }),
+  });
+
+  server.listen(port, () => {
+    console.log(`Wheel of Time semantic search listening on http://localhost:${port}`);
+  });
+}
+
+main();

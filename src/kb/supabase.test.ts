@@ -112,3 +112,51 @@ describe("createSupabaseClient", () => {
     await expect(db.insertDocuments([row()])).rejects.toThrow(/HTTP 401/);
   });
 });
+
+describe("createSupabaseClient.matchDocuments", () => {
+  it("posts to the given RPC with the query embedding and match count", async () => {
+    const fetchImpl = vi.fn(async () =>
+      ({
+        ok: true,
+        status: 200,
+        json: async () => [{ id: 1, content: "The One Power", source_url: "https://wot.fandom.com/wiki/One_Power", similarity: 0.91 }],
+      }) as unknown as Response,
+    );
+    const db = createSupabaseClient(URL, KEY, fetchImpl);
+
+    const results = await db.matchDocuments("match_documents_768", [0.1, 0.2], 5);
+
+    const [input, init] = (fetchImpl as ReturnType<typeof vi.fn>).mock.calls[0] as [
+      string,
+      RequestInit,
+    ];
+    expect(input).toBe(`${URL}/rest/v1/rpc/match_documents_768`);
+    expect(init.method).toBe("POST");
+    expect(init.headers).toMatchObject({
+      apikey: KEY,
+      authorization: `Bearer ${KEY}`,
+      "content-type": "application/json",
+      "accept-profile": "public",
+    });
+    expect(JSON.parse(init.body as string)).toEqual({
+      query_embedding: "[0.1,0.2]",
+      match_count: 5,
+    });
+    expect(results).toEqual([
+      {
+        id: 1,
+        content: "The One Power",
+        sourceUrl: "https://wot.fandom.com/wiki/One_Power",
+        similarity: 0.91,
+      },
+    ]);
+  });
+
+  it("rejects with the HTTP status on failure", async () => {
+    const fetchImpl: FetchLike = async () =>
+      ({ ok: false, status: 500, statusText: "Internal Server Error" }) as unknown as Response;
+    const db = createSupabaseClient(URL, KEY, fetchImpl);
+
+    await expect(db.matchDocuments("match_documents_3072", [0.1], 5)).rejects.toThrow(/HTTP 500/);
+  });
+});

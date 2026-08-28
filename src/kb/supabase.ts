@@ -7,11 +7,21 @@ export interface DocumentRow {
   embedding_3072: string;
 }
 
+export type MatchDocumentsRpc = "match_documents_768" | "match_documents_3072";
+
+export interface SearchMatch {
+  id: number;
+  content: string;
+  sourceUrl: string;
+  similarity: number;
+}
+
 export interface SupabaseClient {
   insertDocuments(rows: readonly DocumentRow[]): Promise<void>;
   deleteDocumentsForSourceUrls(urls: readonly string[]): Promise<void>;
   countDocuments(): Promise<number>;
   countDocumentsWithMissingEmbeddings(): Promise<number>;
+  matchDocuments(rpc: MatchDocumentsRpc, queryEmbedding: readonly number[], matchCount: number): Promise<SearchMatch[]>;
 }
 
 const INSERT_BATCH_SIZE = 100;
@@ -85,6 +95,36 @@ export function createSupabaseClient(
     async countDocumentsWithMissingEmbeddings() {
       const ids = await selectIds("select=id&or=(embedding_768.is.null,embedding_3072.is.null)");
       return ids.length;
+    },
+
+    async matchDocuments(rpc, queryEmbedding, matchCount) {
+      const response = await request(
+        fetchImpl,
+        `${supabaseUrl.replace(/\/$/, "")}/rest/v1/rpc/${rpc}`,
+        serviceRoleKey,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json", "accept-profile": "public" },
+          body: JSON.stringify({
+            query_embedding: `[${queryEmbedding.join(",")}]`,
+            match_count: matchCount,
+          }),
+        },
+      );
+
+      const rows = (await response.json()) as {
+        id: number;
+        content: string;
+        source_url: string;
+        similarity: number;
+      }[];
+
+      return rows.map((r) => ({
+        id: r.id,
+        content: r.content,
+        sourceUrl: r.source_url,
+        similarity: r.similarity,
+      }));
     },
   };
 }
