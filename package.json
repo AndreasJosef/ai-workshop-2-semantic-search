@@ -6,6 +6,7 @@
   "packageManager": "pnpm@10.34.1",
   "scripts": {
     "corpus": "tsx src/corpus/main.ts",
+    "kb": "tsx --env-file=.env src/kb/main.ts",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },
