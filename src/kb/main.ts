@@ -1,18 +1,9 @@
+import { requiredEnv } from "../env.js";
 import { CURATED_PAGES } from "../corpus/pages.js";
 import { runPipeline } from "../corpus/pipeline.js";
 import { createOpenRouterEmbedder } from "./embeddings.js";
 import { createSupabaseClient } from "./supabase.js";
 import { storeChunks } from "./store.js";
-
-function requiredEnv(name: string): string {
-  const value = process.env[name];
-
-  if (!value) {
-    throw new Error(`Missing required environment variable: ${name}`);
-  }
-
-  return value;
-}
 
 async function main(): Promise<void> {
   const openRouterApiKey = requiredEnv("OPENROUTER_API_KEY");
